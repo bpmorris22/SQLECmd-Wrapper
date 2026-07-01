@@ -177,7 +177,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.5.2";
+var APP_VERSION = "1.5.3";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -450,8 +450,8 @@ function processDb(){
     ":sqle_retry",
     "set /a _T+=1",
     '"'+EXE+'" '+flag+' "'+inp+'" --csv "'+outdir+'"'+extra+' > "__LOG__" 2>&1',
-    'findstr /c:"being used by another process" "__LOG__" >nul',
-    'if %errorlevel%==0 if %_T% LSS 4 ( echo SQLite.Interop.dll was locked - retrying in 5s [attempt %_T%]... & ping -n 6 127.0.0.1 >nul & goto sqle_retry )'
+    'findstr /c:"Unhandled exception" "__LOG__" >nul',
+    'if %errorlevel%==0 if %_T% LSS 4 ( echo SQLECmd crashed at startup (likely SQLite.Interop.dll locked by AV) - retrying in 5s [attempt %_T%]... & ping -n 6 127.0.0.1 >nul & goto sqle_retry )'
   ], true);
   ctx.onTick=function(s){ setStatus(note+"SQLECmd running… "+s+"s elapsed (app responsive; results load when done)","muted"); };
   ctx.onTimeout=function(){ BUSY=false; $("procBtn").disabled=false; setStatus("SQLECmd still running after 30 min — stopped watching. Check the output folder / console window.","err"); };
@@ -462,14 +462,21 @@ function processDb(){
 function processDbDone(log,outdir,before){
   appendLog("--- SQLECmd output ---\n"+log);
   LASTOUTDIR=outdir;
-  if(/being used by another process/i.test(log)){
-    setStatus("SQLECmd could not start: SQLite.Interop.dll is locked (usually AV/Cylance scanning it). Close any other SQLECmd window and click Process again.","err");
+  var all=listCsvFiles(outdir);
+  var fresh=[]; for(var i=0;i<all.length;i++){ if(!before[all[i].name]) fresh.push(all[i]); }
+  if(!fresh.length){
+    // no new output — diagnose why (a locked DATA file is normal on a live system and is NOT a failure)
+    if(/Interop\.dll' because it is being used/i.test(log) || /Unhandled exception/i.test(log))
+      setStatus("SQLECmd crashed at startup — SQLite.Interop.dll is locked (AV/Cylance scanning it, or another SQLECmd instance). Wait a few seconds and click Process again.","err");
+    else
+      setStatus("SQLECmd produced no new CSV — no maps matched the input, or every target database was locked/in use. See the log.","err");
+    populateProduced(all);
     return;
   }
-  var all=listCsvFiles(outdir);
-  if(!all.length){ setStatus("SQLECmd produced no CSV — no maps matched the input, or see the log","err"); populateProduced([]); return; }
-  var fresh=[]; for(var i=0;i<all.length;i++){ if(!before[all[i].name]) fresh.push(all[i]); }
-  var pool=fresh.length?fresh:all;
+  // SUCCESS — CSVs were produced. On a LIVE system some DBs are locked by running apps and get skipped; that's expected, not an error.
+  var locked=(log.match(/because it is being used by another process/gi)||[]).length;
+  var lockNote = locked ? (" — note: "+locked+" live database(s) were locked/in use and skipped; scan an offline copy or shadow copy to capture those.") : "";
+  var pool=fresh;
   PRODUCED=pool;
   populateProduced(pool);
   var groups=groupByType(pool), hv=[], t;
@@ -479,16 +486,16 @@ function processDbDone(log,outdir,before){
     setStatus("Merging "+mset.length+" of "+hv.length+" browser-history source(s)…","muted");
     window.setTimeout(function(){
       loadMergedHistories(mset, "Browser histories — "+mset.length+" of "+hv.length+" sources (Chrome/Edge/Firefox)");
-      if(mset.length<hv.length)
-        setStatus("Loaded "+mset.length+" of "+hv.length+" history sources merged (Chrome/Edge/Firefox; large version-snapshot copies left out to stay fast — load them from 'Analyzed databases'). Use the source: filter to slice by browser.","ok");
-      else
-        setStatus("Loaded all "+hv.length+" browser-history sources merged (Chrome/Edge/Firefox). Use the source: filter to slice by browser.","ok");
+      var base = (mset.length<hv.length)
+        ? ("Loaded "+mset.length+" of "+hv.length+" history sources merged (large version-snapshot copies left out — load them from 'Analyzed databases').")
+        : ("Loaded all "+hv.length+" browser-history sources merged (Chrome/Edge/Firefox).");
+      setStatus(base+" Use the source: filter to slice by browser."+lockNote,"ok");
     }, 50);
     return;
   }
   var best=pool[0]; for(var j=1;j<pool.length;j++){ if(pool[j].size>best.size) best=pool[j]; }
   try{ $("producedSel").value=best.path; }catch(e){}
-  setStatus("Produced "+pool.length+" CSV(s); loaded largest: "+best.name+". Pick others from 'Analyzed databases'.","ok");
+  setStatus("Produced "+pool.length+" CSV(s); loaded largest: "+best.name+". Pick others from 'Analyzed databases'."+lockNote,"ok");
   loadCsvFile(best.path);
 }
 function csvNameSet(dir){ var o={}, l=listCsvFiles(dir); for(var i=0;i<l.length;i++) o[l[i].name]=true; return o; }
