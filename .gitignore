@@ -1,0 +1,17 @@
+# Eric Zimmerman's SQLECmd binaries + maps — downloaded at runtime, NOT redistributed here
+SQLECmd.exe
+SQLECmd.dll
+SQLECmd.runtimeconfig.json
+SQLite.Interop.dll
+Maps/
+
+# Forensic output / case data — never commit
+Exported CSVs/
+*.csv
+*.db
+*.sqlite
+*.sqlite-*
+
+# scratch
+*.tmp
+*.log
