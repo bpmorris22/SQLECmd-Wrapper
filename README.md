@@ -6,6 +6,8 @@ artifacts — with a dedicated browser-history analysis view for Chrome, Edge an
 
 No install: it's one `.hta` you double-click.
 
+![SQLECmd Wrapper — opening window](screenshot.jpg)
+
 ## What it does
 
 - **Drives SQLECmd from a GUI** — check version, process a single database (`-f`) or
