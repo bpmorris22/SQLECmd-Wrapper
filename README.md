@@ -56,6 +56,11 @@ Use **A− / A+** to scale the UI; the window is resizable.
   a location you trust, and review the source (it's a single readable file) if in doubt.
 - All parsing and analysis happen locally. The only network activity is the optional
   SQLECmd version check / download.
+- **Running from a network location** (mapped drive / UNC share) works, with one caveat:
+  Windows zone policy blocks the UTF-8 file reader (`ADODB.Stream`) there, so the app
+  automatically falls back to ANSI file IO (v1.5.5+) and logs a one-time note. Everything
+  functions, but non-ASCII characters (e.g. non-Latin URLs or page titles) may display
+  incorrectly. For full fidelity copy the folder to a local path and run it from there.
 - Not affiliated with or endorsed by Eric Zimmerman. SQLECmd and its Maps are downloaded
   from the author's official distribution and remain subject to their own license; they are
   **not** included in this repository.
