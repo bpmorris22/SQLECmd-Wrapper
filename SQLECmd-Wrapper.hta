@@ -177,7 +177,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.5.5";
+var APP_VERSION = "1.5.6";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -1075,6 +1075,7 @@ function init(){
   var appData=sh.ExpandEnvironmentStrings("%USERPROFILE%")+"\\AppData";
   $("histPath").value=appData;
   $("inMode").value="d";
+  $("browseBtn").innerHTML="Browse folder…";
   // default output = "Exported CSVs" next to the .hta (create it if missing); fall back to temp if app folder unknown
   var expBase=htaFolder()||fso.GetSpecialFolder(2)+"";
   var expDir=expBase+"\\Exported CSVs";
@@ -1107,10 +1108,22 @@ function init(){
       },50);
     } else { setStatus("Loading "+v,"muted"); window.setTimeout(function(){ loadCsvFile(v); },50); }
   };
-  $("browseBtn").onclick=function(){ $("histPick").click(); };
-  $("histPick").onchange=function(){ if(this.value){ var v=this.value;
-    if($("inMode").value==="d"){ var i=v.lastIndexOf("\\"); if(i>0) v=v.substring(0,i); }
-    $("histPath").value=v; } };
+  $("browseBtn").onclick=function(){
+    if($("inMode").value==="d"){
+      // directory mode → real folder picker (Shell.Application), not a file dialog
+      try{
+        var shell=new ActiveXObject("Shell.Application");
+        var root=$("histPath").value, title="Select a folder to process recursively", f;
+        try{ f=(root && folderExists(root)) ? shell.BrowseForFolder(0,title,0x51,root) : shell.BrowseForFolder(0,title,0x51); }
+        catch(e1){ f=shell.BrowseForFolder(0,title,0x1); }   // fall back to classic dialog
+        if(f && f.Self && f.Self.Path) $("histPath").value=f.Self.Path;
+      }catch(e){ setStatus("Folder picker unavailable ("+e.message+") — type or paste the folder path instead.","err"); }
+    } else {
+      $("histPick").click();
+    }
+  };
+  $("histPick").onchange=function(){ if(this.value) $("histPath").value=this.value; };
+  $("inMode").onchange=function(){ $("browseBtn").innerHTML = (this.value==="d") ? "Browse folder…" : "Browse…"; };
   $("loadBtn").onclick=function(){ $("csvPick").click(); };
   $("csvPick").onchange=function(){ if(this.value){ setStatus("Loading "+this.value,"muted"); loadCsvFile(this.value); } };
   $("logToggle").onclick=function(){ var l=$("log");
