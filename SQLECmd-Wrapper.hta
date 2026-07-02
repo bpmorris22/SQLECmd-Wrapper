@@ -177,7 +177,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.5.3";
+var APP_VERSION = "1.5.4";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -230,6 +230,9 @@ function writeUtf8(path,text){
   st.Type=2; st.Charset="utf-8"; st.Open(); st.WriteText(text); st.SaveToFile(path,2); st.Close();
 }
 function uid(){ return new Date().getTime()+""+Math.floor(Math.random()*100000); }
+/* cmd expands %N / %VAR% inside .bat lines even within quotes — double every % in
+   user-supplied paths (e.g. Velociraptor "C%3A" collection dirs) so they survive. */
+function batEsc(s){ return String(s).replace(/%/g,"%%"); }
 
 /* Run a batch script, wait, return {rc, log}. show=true → visible console window. */
 function runBat(lines, show){
@@ -438,18 +441,19 @@ function processDb(){
   appendLog("Running: \""+EXE+"\" "+flag+" \""+inp+"\" --csv \""+outdir+"\""+extra
     +"\nA console window shows progress; the app stays responsive and loads results automatically when done.");
   BUSY=true; $("procBtn").disabled=true;
+  var binp=batEsc(inp), bout=batEsc(outdir);
   var ctx=runBatAsync([
     "set DOTNET_ROLL_FORWARD=Major",
-    'if not exist "'+outdir+'" mkdir "'+outdir+'"',
+    'if not exist "'+bout+'" mkdir "'+bout+'"',
     "echo SQLECmd is processing:",
-    "echo   "+inp,
-    "echo Output: "+outdir,
+    "echo   "+binp,
+    "echo Output: "+bout,
     "echo A directory hunt can take several minutes. This window closes automatically when finished.",
     "echo.",
     "set _T=0",
     ":sqle_retry",
     "set /a _T+=1",
-    '"'+EXE+'" '+flag+' "'+inp+'" --csv "'+outdir+'"'+extra+' > "__LOG__" 2>&1',
+    '"'+batEsc(EXE)+'" '+flag+' "'+binp+'" --csv "'+bout+'"'+extra+' > "__LOG__" 2>&1',
     'findstr /c:"Unhandled exception" "__LOG__" >nul',
     'if %errorlevel%==0 if %_T% LSS 4 ( echo SQLECmd crashed at startup (likely SQLite.Interop.dll locked by AV) - retrying in 5s [attempt %_T%]... & ping -n 6 127.0.0.1 >nul & goto sqle_retry )'
   ], true);
