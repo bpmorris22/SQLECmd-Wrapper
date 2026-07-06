@@ -65,6 +65,17 @@ Use **A− / A+** to scale the UI; the window is resizable.
   from the author's official distribution and remain subject to their own license; they are
   **not** included in this repository.
 
+## Command line
+
+The wrapper can be launched with arguments so an artifact-finder (or a shortcut) opens it already pointed at an artifact:
+
+```
+mshta.exe "SQLECmd-Wrapper.hta" "<inputOrCsv>" ["<outDir>"] [/auto]
+```
+- `<input>` — a `.csv` (auto-loaded into the viewer) or a SQLite DB file / directory to scan (prefilled; processed if `/auto`).
+- `<outDir>` — CSV output directory (optional).
+- `/auto` — process immediately.
+
 ## License
 
 [MIT](LICENSE)
