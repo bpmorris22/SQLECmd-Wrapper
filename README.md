@@ -30,6 +30,9 @@ No install: it's one `.hta` you double-click.
 - **Triage helpers** — free-text search, date range, hidden-only, CSV export of the
   current view, copy-for-case-notes, and a *List supported DBs* view of every SQLECmd map
   available locally.
+- **Resizable columns** (v1.7.0) — drag a column header's right edge to resize; double-click
+  the edge to reset. Widths are remembered per column set (the columns change with every
+  database/map) in a `SQLECmd-Wrapper.settings.json` sidecar next to the app.
 
 ## Requirements
 

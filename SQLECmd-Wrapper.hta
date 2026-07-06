@@ -57,6 +57,8 @@
   th,td{text-align:left;padding:4px 7px;border-bottom:1px solid #30363d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   th{background:#1c2330;cursor:pointer;color:#c9d1d9;position:relative;z-index:3;box-shadow:0 1px 0 #30363d}
   th:hover{color:#58a6ff}
+  .cgrip{position:absolute;top:0;right:-4px;width:8px;height:100%;cursor:col-resize;z-index:6}
+  .cgrip:hover{background:#58a6ff;filter:alpha(opacity=45);opacity:.45}
   td{max-width:360px}
   tr.sus td{background:#2a1416}
   tr.sus td.first{border-left:3px solid #ff6b6b}
@@ -189,7 +191,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.6.2";
+var APP_VERSION = "1.7.0";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -216,6 +218,9 @@ var SRCFILTER = "";                  // selected SourceFile filter (both modes)
 var BUSY = false;                    // a SQLECmd run is in progress
 var PRODUCED = [];                   // CSVs produced by the last run (for merge-by-type)
 var MERGE_BUDGET = 26*1024*1024;     // cap for auto-merging same-type CSVs (keeps MSHTML responsive)
+var SETTINGS = {};                   // persisted sidecar (currently: per-column-set widths)
+var COLW = null;                     // px widths for the CURRENT column set once the user resizes
+var DRAG = null;                     // active column-drag state
 
 /* ---------- tiny helpers ---------- */
 function $(id){ return document.getElementById(id); }
@@ -686,9 +691,12 @@ function renderGeneric(){
   h+="</tbody>"; $("tbl").innerHTML=h;
   $("count").innerHTML=nf(rows.length)+" rows"+(shown<rows.length?(" (showing "+nf(shown)+")"):"");
   var ths=$("tbl").getElementsByTagName("th");
-  for(var i2=0;i2<ths.length;i2++){ ths[i2].onclick=function(){ var kk=parseInt(this.getAttribute("data-k"),10);
+  for(var i2=0;i2<ths.length;i2++){ ths[i2].onclick=function(e){ e=e||window.event; var tg=e.target||e.srcElement;
+    if(tg && /\bcgrip\b/.test(tg.className+"")) return;   // resize-grip clicks never sort
+    var kk=parseInt(this.getAttribute("data-k"),10);
     if(GSORTKEY===kk) GSORTDIR*=-1; else { GSORTKEY=kk; GSORTDIR=1; } renderGeneric(); }; }
   applyFreeze();
+  setupColResize();
   window.__viewRows=rows;
 }
 
@@ -1012,6 +1020,7 @@ function render(){
   $("count").innerHTML=nf(rows.length)+" rows"+(shown<rows.length?(" (showing "+nf(shown)+")"):"");
   wireHeaders();
   applyFreeze();
+  setupColResize();
   window.__viewRows=rows;
 }
 function applyFreeze(){
@@ -1021,11 +1030,129 @@ function applyFreeze(){
 }
 function wireHeaders(){
   var ths=$("tbl").getElementsByTagName("th");
-  for(var i=0;i<ths.length;i++){ ths[i].onclick=function(){
+  for(var i=0;i<ths.length;i++){ ths[i].onclick=function(e){
+    e=e||window.event; var tg=e.target||e.srcElement;
+    if(tg && /\bcgrip\b/.test(tg.className+"")) return;   // resize-grip clicks never sort
     var k=parseInt(this.getAttribute("data-k"),10);
     if(SORTKEY===k) SORTDIR*=-1; else { SORTKEY=k; SORTDIR=1; }
     render();
   }; }
+}
+
+/* ---------- settings sidecar (JSON next to the .hta; falls back to %TEMP%) ---------- */
+function settingsPath(){
+  var d=htaFolder();
+  if(!d){ try{ d=new ActiveXObject("Scripting.FileSystemObject").GetSpecialFolder(2)+""; }catch(e){ return ""; } }
+  return d+"\\SQLECmd-Wrapper.settings.json";
+}
+function loadSettings(){
+  SETTINGS={};
+  try{ var p=settingsPath();
+    if(p && fileExists(p)){ var o=eval("("+readUtf8(p)+")"); if(o && typeof o==="object") SETTINGS=o; }
+  }catch(e){ SETTINGS={}; }
+  if(!SETTINGS.colw) SETTINGS.colw={};
+  if(!SETTINGS.colwOrder) SETTINGS.colwOrder=[];
+}
+function saveSettings(){
+  try{ var p=settingsPath(); if(p && typeof JSON!=="undefined" && JSON.stringify) writeUtf8(p, JSON.stringify(SETTINGS)); }catch(e){}
+}
+
+/* ---------- resizable columns (drag th edge; dblclick grip = reset) ----------
+   Columns are DYNAMIC here (any DB / map / query), so widths persist per COLUMN SET:
+   SETTINGS.colw is a map keyed by a signature of the header names; SETTINGS.colwOrder
+   tracks insertion order so the map stays capped (~20 sets). */
+function colHeads(){
+  if(MODE==="generic") return GHEAD||[];
+  var a=[]; for(var i=0;i<COLS.length;i++) a.push(COLS[i].h); return a;
+}
+function colSig(){
+  var h=colHeads(); if(!h.length) return "";
+  var s=h.join("|").toLowerCase(), hsh=5381;
+  for(var i=0;i<s.length;i++){ hsh=((hsh*33)^s.charCodeAt(i))&0xFFFFFFF; }
+  return h.length+"_"+hsh.toString(16);
+}
+function colwStore(sig,arr){
+  if(!sig) return;
+  if(!SETTINGS.colw) SETTINGS.colw={};
+  if(!SETTINGS.colwOrder) SETTINGS.colwOrder=[];
+  if(!SETTINGS.colw[sig]) SETTINGS.colwOrder.push(sig);
+  SETTINGS.colw[sig]=arr;
+  while(SETTINGS.colwOrder.length>20){
+    var old=SETTINGS.colwOrder[0]; SETTINGS.colwOrder=SETTINGS.colwOrder.slice(1);
+    if(old!==sig){ try{ delete SETTINGS.colw[old]; }catch(e){} }
+  }
+  try{ saveSettings(); }catch(e2){}
+}
+function curZoom(){
+  try{ var el=$("content");
+    var z=parseFloat(el.style.zoom||(el.currentStyle&&el.currentStyle.zoom)||"");
+    if(!z && window.getComputedStyle) z=parseFloat(getComputedStyle(el).zoom);
+    return (z&&z>0)?z:1;
+  }catch(e){ return 1; }
+}
+function setupColResize(){
+  var tbl=$("tbl"); if(!tbl) return;
+  var ths=tbl.getElementsByTagName("th"); if(!ths.length) return;
+  var sig=colSig();
+  var saved=(SETTINGS.colw && sig)?SETTINGS.colw[sig]:null;
+  COLW=(saved && saved.length===ths.length)?saved:null;
+  if(COLW){
+    tbl.style.tableLayout="fixed"; tbl.style.width="auto";
+    for(var j=0;j<ths.length;j++) ths[j].style.width=COLW[j]+"px";
+  } else {
+    tbl.style.tableLayout=""; tbl.style.width="";   // new column set → back to natural layout
+  }
+  for(var i=0;i<ths.length;i++){
+    var g=document.createElement("div");
+    g.className="cgrip"; g.setAttribute("data-ci",String(i));
+    g.title="Drag to resize column — double-click to reset all widths";
+    g.onmousedown=gripDown; g.ondblclick=gripReset;
+    ths[i].appendChild(g);
+  }
+}
+function gripDown(e){
+  e=e||window.event;
+  var ci=parseInt(this.getAttribute("data-ci"),10);
+  var tbl=$("tbl"), ths=tbl.getElementsByTagName("th");
+  if(isNaN(ci)||ci<0||ci>=ths.length) return false;
+  if(!COLW || COLW.length!==ths.length){          // first drag: freeze the browser's current widths
+    COLW=[]; for(var i=0;i<ths.length;i++) COLW.push(ths[i].offsetWidth);
+    tbl.style.tableLayout="fixed"; tbl.style.width="auto";
+    for(var j=0;j<ths.length;j++) ths[j].style.width=COLW[j]+"px";
+  }
+  DRAG={ci:ci, x:(e.clientX||0), w:COLW[ci], th:ths[ci], z:curZoom(), sig:colSig()};
+  document.onmousemove=gripMove; document.onmouseup=gripUp;
+  document.onselectstart=function(){ return false; };
+  if(e.preventDefault) e.preventDefault(); e.returnValue=false;
+  if(e.stopPropagation) e.stopPropagation(); e.cancelBubble=true;
+  return false;
+}
+function gripMove(e){
+  e=e||window.event; if(!DRAG) return false;
+  var w=Math.round(DRAG.w+((e.clientX||0)-DRAG.x)/DRAG.z);
+  if(w<40) w=40; if(w>1600) w=1600;
+  COLW[DRAG.ci]=w; DRAG.th.style.width=w+"px";
+  return false;
+}
+function gripUp(){
+  document.onmousemove=null; document.onmouseup=null; document.onselectstart=null;
+  if(DRAG){ var sig=DRAG.sig; DRAG=null; colwStore(sig,COLW); }
+}
+function gripReset(e){
+  e=e||window.event;
+  document.onmousemove=null; document.onmouseup=null; document.onselectstart=null; DRAG=null;
+  COLW=null;
+  var sig=colSig();
+  if(sig && SETTINGS.colw && SETTINGS.colw[sig]){
+    try{ delete SETTINGS.colw[sig]; }catch(ed){}
+    if(SETTINGS.colwOrder){ var no=[]; for(var i=0;i<SETTINGS.colwOrder.length;i++){ if(SETTINGS.colwOrder[i]!==sig) no.push(SETTINGS.colwOrder[i]); } SETTINGS.colwOrder=no; }
+    try{ saveSettings(); }catch(er){}
+  }
+  var tbl=$("tbl"); if(tbl){ tbl.style.tableLayout=""; tbl.style.width=""; }
+  render();
+  setStatus("Column widths reset","ok");
+  if(e){ if(e.stopPropagation) e.stopPropagation(); e.cancelBubble=true; }
+  return false;
 }
 
 /* ---------- export / copy ---------- */
@@ -1080,6 +1207,7 @@ function init(){
   try{ window.resizeTo(1320,900); }catch(e){}
   $("appver").innerHTML="&middot; v"+APP_VERSION;
   try{ document.title="SQLECmd Wrapper v"+APP_VERSION; }catch(e){}
+  loadSettings();
   $("tblScroll").onscroll=applyFreeze;
   var fso=new ActiveXObject("Scripting.FileSystemObject");
   var sh=new ActiveXObject("WScript.Shell");
@@ -1169,6 +1297,7 @@ function init(){
 
   /* host click delegation */
   document.onclick=function(e){ e=e||window.event; var t=e.target||e.srcElement;
+    if(t && /\bcgrip\b/.test(t.className+"")) return;   // column-resize grip: never treat as a row/host click
     var host=t&&t.getAttribute?t.getAttribute("data-host"):null;
     if(host){ $("q").value=host; QUERY=host.toLowerCase(); render(); } };
 
@@ -1309,6 +1438,7 @@ window.onload=function(){ init(); try{ window.setTimeout(checkSelfUpdate,600); }
     <h3>Notes</h3>
     <ul>
       <li>Browser-history merge across sources, hunt/maps, and a hidden-rows filter are built in.</li>
+      <li>Drag a column header's right edge to resize it (double-click the edge to reset). Widths are remembered per column set in <code>SQLECmd-Wrapper.settings.json</code> next to the app.</li>
       <li>SQLECmd targets .NET 9; the wrapper runs it with <code>DOTNET_ROLL_FORWARD=Major</code> automatically.</li>
     </ul>
     <p class="muted" style="font-size:11px">MIT © 2026 Ben Morris — click the link above for the full README &amp; releases.</p>

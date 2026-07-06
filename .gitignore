@@ -12,6 +12,9 @@ Exported CSVs/
 *.sqlite
 *.sqlite-*
 
+# per-machine settings sidecar (column widths etc.)
+SQLECmd-Wrapper.settings.json
+
 # scratch
 *.tmp
 *.log
