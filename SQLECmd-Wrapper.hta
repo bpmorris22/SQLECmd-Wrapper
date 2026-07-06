@@ -193,7 +193,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.8.0";
+var APP_VERSION = "1.9.0";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -510,6 +510,24 @@ function requireHost(){
   return h;
 }
 
+/* ---------- run provenance (family, 2026-07-06) ----------
+   Appended into <outDir>\runinfo.json after every successful run. The Artifact-Finder reads
+   these to bind outputs to their exact source artifact (and host) even without its manifest —
+   standalone wrapper runs show up as processed too. */
+function writeRunInfo(outdir, input, freshFiles){
+  try{
+    var p=String(outdir).replace(/[\\\/]+$/,"")+"\\runinfo.json";
+    var arr=[];
+    try{ if(fileExists(p)){ var old=JSON.parse(readUtf8(p)); if(old && old.length!=null) arr=old; } }catch(e0){}
+    var d=new Date(); function p2(x){ return (x<10?"0":"")+x; }
+    var iso=d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate())+"T"+p2(d.getHours())+":"+p2(d.getMinutes())+":"+p2(d.getSeconds());
+    var names=[]; for(var i=0;i<freshFiles.length && i<50;i++) names.push(freshFiles[i].name||String(freshFiles[i]));
+    arr.push({app:APP_NAME, appVersion:APP_VERSION, host:sanitHost($("hostName").value),
+              input:String(input||""), finishedUtc:iso, files:names});
+    writeUtf8(p, JSON.stringify(arr,null,2));
+  }catch(e){}
+}
+
 function processDb(){
   var inp=$("histPath").value;
   if(!requireHost()) return;
@@ -565,6 +583,7 @@ function processDbDone(log,outdir,before){
     return;
   }
   // SUCCESS — CSVs were produced. On a LIVE system some DBs are locked by running apps and get skipped; that's expected, not an error.
+  writeRunInfo(outdir, $("histPath").value, fresh);
   var locked=(log.match(/because it is being used by another process/gi)||[]).length;
   var lockNote = locked ? (" — note: "+locked+" live database(s) were locked/in use and skipped; scan an offline copy or shadow copy to capture those.") : "";
   var pool=fresh;
@@ -1473,6 +1492,7 @@ window.onload=function(){ init(); try{ window.setTimeout(checkSelfUpdate,600); }
       <li><code>&lt;input&gt;</code> — a <code>.csv</code> (auto-loads) or a SQLite DB file / directory to scan (prefilled; processed with <code>/auto</code>).</li>
       <li><code>&lt;outDir&gt;</code> — CSV output directory (optional). &nbsp; <code>/auto</code> — process immediately.</li>
       <li><b>Target hostname</b> is required before processing — it names the output folder <code>_Processed\&lt;host&gt;\SQLECmd</code> next to this app (family convention shared with the Artifact-Finder). It is guessed from <code>Collection-&lt;host&gt;-…</code> paths, a passed <code>_Processed\&lt;host&gt;\</code> outDir, or this machine's name for live paths — overwrite the guess if it's wrong.</li>
+      <li>After every successful run a <code>runinfo.json</code> provenance entry (app, host, input path, files) is appended in the output folder — the Artifact-Finder uses it to show processed state even for runs done outside the finder.</li>
     </ul>
     <h3>Notes</h3>
     <ul>
