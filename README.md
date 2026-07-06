@@ -48,7 +48,7 @@ No install: it's one `.hta` you double-click.
 2. If prompted, let it download SQLECmd next to the app.
 3. Pick a single database file, or a directory to recurse (defaults to the current user's
    `AppData`); optionally tick **hunt**; click **Process → analyze**.
-4. Output CSVs are written to an `Exported CSVs` folder next to the app, and the most
+4. Output CSVs are written to `_Processed\<host>\SQLECmd` next to the app (see **Target hostname** below), and the most
    useful result (e.g. merged browser histories) loads automatically.
 
 Use **A− / A+** to scale the UI; the window is resizable.
@@ -76,7 +76,8 @@ The wrapper can be launched with arguments so an artifact-finder (or a shortcut)
 mshta.exe "SQLECmd-Wrapper.hta" "<inputOrCsv>" ["<outDir>"] [/auto]
 ```
 - `<input>` — a `.csv` (auto-loaded into the viewer) or a SQLite DB file / directory to scan (prefilled; processed if `/auto`).
-- `<outDir>` — CSV output directory (optional).
+- `<outDir>` — CSV output directory (optional; defaults to `_Processed\<host>\SQLECmd` next to the app).
+- **Target hostname** is required before processing — it names the `_Processed\<host>\SQLECmd` output folder next to the app (family convention shared with the DFIR-Artifact-Finder, so processed evidence is visible per host per tool). Guessed from `Collection-<host>-…` paths, a passed `_Processed\<host>\` outDir, or this machine's name for live paths — overwrite the guess if it's wrong.
 - `/auto` — process immediately.
 
 ## License

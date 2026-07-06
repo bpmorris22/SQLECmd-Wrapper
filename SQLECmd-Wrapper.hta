@@ -116,6 +116,8 @@
     <input class="txt wide" id="histPath" value="">
     <input type="file" id="histPick" style="display:none">
     <button class="btn" id="browseBtn">Browse&hellip;</button>
+    <label class="fld" title="Required before processing. Guessed from the input path (Collection-<host>-… segments, or this machine for live paths) — overwrite it if the guess is wrong.">Target hostname (required) &mdash; names the output folder _Processed\&lt;host&gt;\SQLECmd next to this app</label>
+    <input class="txt" id="hostName" value="" style="width:260px" placeholder="e.g. LT-2738RQ3">
     <label class="fld">CSV output directory</label>
     <input class="txt wide" id="outDir" value="">
     <button class="btn" id="openDirBtn">Open folder</button>
@@ -191,7 +193,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.7.0";
+var APP_VERSION = "1.8.0";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -474,8 +476,43 @@ function checkVersion(){
   }catch(e){ LOCAL_VER=""; updateVerPill(); setStatus("Version check failed: "+e.message,"err"); }
 }
 
+/* ---------- target hostname + _Processed output convention (family, 2026-07-06) ----------
+   All processed output lands in <appFolder>\_Processed\<Hostname>\<AppName>\ so the
+   Artifact-Finder (and the operator) can see per-host state at a glance. The hostname field is
+   REQUIRED before processing (not for just viewing CSVs). Guess order: Collection-<host>-<date>
+   segment in the input path → \_Processed\<host>\ in a CLI-passed outDir → live-machine paths
+   (X:\Windows / X:\Users → this computer's name). User-typed values are never overwritten. */
+var APP_NAME="SQLECmd";
+var HOST_TOUCHED=false, OUT_TOUCHED=false;
+function sanitHost(s){ return String(s).replace(/[^A-Za-z0-9._\-]/g,"-").replace(/^[\-.]+|[\-.]+$/g,""); }
+function guessHost(p){
+  p=String(p||"");
+  var m=p.match(/Collection-([A-Za-z0-9][A-Za-z0-9\-_\.]*?)-\d{4}-\d{2}-\d{2}/i); if(m) return m[1];
+  m=p.match(/[\\\/]_Processed[\\\/]([^\\\/]+)[\\\/]/i); if(m) return m[1];
+  if(/^[a-z]:\\(windows|users)(\\|$)/i.test(p)){ try{ return new ActiveXObject("WScript.Network").ComputerName+""; }catch(e){} }
+  return "";
+}
+function defaultOutDir(){
+  var h=sanitHost($("hostName").value); if(!h) return "";
+  var base=htaFolder(); if(!base){ try{ base=new ActiveXObject("Scripting.FileSystemObject").GetSpecialFolder(2)+""; }catch(e){ return ""; } }
+  return base+"\\_Processed\\"+h+"\\"+APP_NAME;
+}
+function syncOutDir(){ if(OUT_TOUCHED) return; var d=defaultOutDir(); if(d) $("outDir").value=d; }
+function hostGuessFrom(p){
+  if(!HOST_TOUCHED || !trimStr($("hostName").value)){ var g=guessHost(p); if(g) $("hostName").value=sanitHost(g); }
+  syncOutDir();
+}
+function requireHost(){
+  var h=sanitHost($("hostName").value);
+  if(!h){ setStatus("Target hostname is required — it names the output folder _Processed\\<host>\\"+APP_NAME+". Type the host this artifact came from, then process again.","err");
+    try{ $("hostName").focus(); }catch(e){} return ""; }
+  if(!trimStr($("outDir").value)) syncOutDir();
+  return h;
+}
+
 function processDb(){
   var inp=$("histPath").value;
+  if(!requireHost()) return;
   var outdir=$("outDir").value;
   var inmode=$("inMode").value;   // "f" file, "d" directory
   var fso=new ActiveXObject("Scripting.FileSystemObject");
@@ -1216,11 +1253,11 @@ function init(){
   $("histPath").value=appData;
   $("inMode").value="d";
   $("browseBtn").innerHTML="Browse folder…";
-  // default output = "Exported CSVs" next to the .hta (create it if missing); fall back to temp if app folder unknown
-  var expBase=htaFolder()||fso.GetSpecialFolder(2)+"";
-  var expDir=expBase+"\\Exported CSVs";
-  try{ if(!fso.FolderExists(expDir)) fso.CreateFolder(expDir); }catch(e){}
-  $("outDir").value=expDir;
+  // default output follows the target hostname: _Processed\<host>\SQLECmd next to the .hta
+  // (the default input is a live users-profile path, so the first guess is this computer's name)
+  hostGuessFrom(appData);
+  $("hostName").onkeyup=function(){ HOST_TOUCHED=true; syncOutDir(); };
+  $("outDir").onkeyup=function(){ OUT_TOUCHED=true; };
 
   var zoom=0.9;
   var zContent=$("content");
@@ -1260,13 +1297,13 @@ function init(){
         var root=$("histPath").value, title="Select a folder to process recursively", f;
         try{ f=(root && folderExists(root)) ? shell.BrowseForFolder(0,title,0x51,root) : shell.BrowseForFolder(0,title,0x51); }
         catch(e1){ f=shell.BrowseForFolder(0,title,0x1); }   // fall back to classic dialog
-        if(f && f.Self && f.Self.Path) $("histPath").value=f.Self.Path;
+        if(f && f.Self && f.Self.Path){ $("histPath").value=f.Self.Path; hostGuessFrom(f.Self.Path); }
       }catch(e){ setStatus("Folder picker unavailable ("+e.message+") — type or paste the folder path instead.","err"); }
     } else {
       $("histPick").click();
     }
   };
-  $("histPick").onchange=function(){ if(this.value) $("histPath").value=this.value; };
+  $("histPick").onchange=function(){ if(this.value){ $("histPath").value=this.value; hostGuessFrom(this.value); } };
   $("inMode").onchange=function(){ $("browseBtn").innerHTML = (this.value==="d") ? "Browse folder…" : "Browse…"; };
   $("loadBtn").onclick=function(){ $("csvPick").click(); };
   $("csvPick").onchange=function(){ if(this.value){ setStatus("Loading "+this.value,"muted"); loadCsvFile(this.value); } };
@@ -1356,7 +1393,8 @@ function applyCli(cli){ if(!cli.input) return false;
   if(fso.FolderExists(cli.input)){ $("inMode").value="d"; $("histPath").value=cli.input; $("browseBtn").innerHTML="Browse folder…"; }
   else if(fso.FileExists(cli.input)){ $("inMode").value="f"; $("histPath").value=cli.input; $("browseBtn").innerHTML="Browse…"; }
   else { setStatus("CLI input not found: "+cli.input,"err"); appendLog("CLI input not found: "+cli.input); return false; }
-  if(cli.outDir) $("outDir").value=cli.outDir;
+  if(cli.outDir){ $("outDir").value=cli.outDir; OUT_TOUCHED=true; hostGuessFrom(cli.outDir); }
+  else hostGuessFrom(cli.input);
   if(cli.auto){ appendLog("CLI: /auto — processing "+cli.input); window.setTimeout(function(){ processDb(); },200); }
   else setStatus("CLI: input prefilled — click 'Process → analyze' to run.","muted");
   return true; }
@@ -1434,6 +1472,7 @@ window.onload=function(){ init(); try{ window.setTimeout(checkSelfUpdate,600); }
     <ul>
       <li><code>&lt;input&gt;</code> — a <code>.csv</code> (auto-loads) or a SQLite DB file / directory to scan (prefilled; processed with <code>/auto</code>).</li>
       <li><code>&lt;outDir&gt;</code> — CSV output directory (optional). &nbsp; <code>/auto</code> — process immediately.</li>
+      <li><b>Target hostname</b> is required before processing — it names the output folder <code>_Processed\&lt;host&gt;\SQLECmd</code> next to this app (family convention shared with the Artifact-Finder). It is guessed from <code>Collection-&lt;host&gt;-…</code> paths, a passed <code>_Processed\&lt;host&gt;\</code> outDir, or this machine's name for live paths — overwrite the guess if it's wrong.</li>
     </ul>
     <h3>Notes</h3>
     <ul>
