@@ -77,10 +77,10 @@ mshta.exe "SQLECmd-Wrapper.hta" "<inputOrCsv>" ["<outDir>"] [/auto] [/from:yyyy-
 ```
 - `<input>` — a `.csv` (auto-loaded into the viewer) or a SQLite DB file / directory to scan (prefilled; processed if `/auto`).
 - `<outDir>` — CSV output directory (optional; defaults to `_Processed\<host>\SQLECmd` next to the app).
-- **Target hostname** is required before processing — it names the `_Processed\<host>\SQLECmd` output folder next to the app (family convention shared with the DFIR-Artifact-Finder, so processed evidence is visible per host per tool). Guessed from `Collection-<host>-…` paths, a passed `_Processed\<host>\` outDir, or this machine's name for live paths — overwrite the guess if it's wrong.
-- **Run provenance** — every successful run appends a `runinfo.json` entry (app, host, input path, files) in the output folder; the DFIR-Artifact-Finder uses it to show processed state even for standalone runs.
+- **Target hostname** is required before processing — it names the `_Processed\<host>\SQLECmd` output folder next to the app (family convention shared with the DFIR-Windows-Artifact-Finder, so processed evidence is visible per host per tool). Guessed from `Collection-<host>-…` paths, a passed `_Processed\<host>\` outDir, or this machine's name for live paths — overwrite the guess if it's wrong.
+- **Run provenance** — every successful run appends a `runinfo.json` entry (app, host, input path, files) in the output folder; the DFIR-Windows-Artifact-Finder uses it to show processed state even for standalone runs.
 - `/auto` — process immediately.
-- `/from:yyyy-MM-dd` `/to:yyyy-MM-dd` — case window (UTC, inclusive): prefills the date filter and is recorded in `runinfo.json`; never affects scoring. The [DFIR-Artifact-Finder](https://github.com/bpmorris22/DFIR-Artifact-Finder) passes these on every launch.
+- `/from:yyyy-MM-dd` `/to:yyyy-MM-dd` — case window (UTC, inclusive): prefills the date filter and is recorded in `runinfo.json`; never affects scoring. The [DFIR-Windows-Artifact-Finder](https://github.com/bpmorris22/DFIR-Windows-Artifact-Finder) passes these on every launch.
 
 ## License
 
