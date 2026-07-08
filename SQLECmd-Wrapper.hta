@@ -117,7 +117,7 @@
     <input type="file" id="histPick" style="display:none">
     <button class="btn" id="browseBtn">Browse&hellip;</button>
     <label class="fld" title="Required before processing. Guessed from the input path (Collection-<host>-… segments, or this machine for live paths) — overwrite it if the guess is wrong.">Target hostname (required) &mdash; names the output folder _Processed\&lt;host&gt;\SQLECmd next to this app</label>
-    <input class="txt" id="hostName" value="" style="width:260px" placeholder="e.g. LT-2738RQ3">
+    <input class="txt" id="hostName" value="" style="width:260px" placeholder="e.g. WORKSTATION-01">
     <label class="fld">CSV output directory</label>
     <input class="txt wide" id="outDir" value="">
     <button class="btn" id="openDirBtn">Open folder</button>
@@ -193,7 +193,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.10.0";
+var APP_VERSION = "1.10.1";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
