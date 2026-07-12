@@ -174,6 +174,8 @@
         <input class="txt" id="q" placeholder="search all columns&hellip;" style="width:300px">
         <span id="srcWrap" class="hide"><span class="sep"></span><label class="muted" style="font-size:12px">source:</label>
           <select id="srcSel" title="Filter by SourceFile — the database each row came from. A directory hunt merges rows from many DBs into one CSV; use this to isolate one source (e.g. one browser profile)."><option value="">all source files</option></select></span>
+        <span id="userWrap" class="hide"><span class="sep"></span><label class="muted" style="font-size:12px">user:</label>
+          <select id="userSel" title="Filter to one Windows user account (parsed from the SourceFile path). In the merged 'all histories' view this isolates a single user's browsing."><option value="">All users</option></select></span>
         <span id="chromeDateCtl">
           <span class="sep"></span>
           <input class="txt mono" id="dfrom" placeholder="from YYYY-MM-DD" style="width:140px">
@@ -198,7 +200,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.15.0";
+var APP_VERSION = "1.16.0";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -222,6 +224,7 @@ var GHEAD = null, GROWS = [], GSRC = "";
 var GSORTKEY = -1, GSORTDIR = 1;
 var GSRCIDX = -1;                     // generic-mode index of the SourceFile column
 var SRCFILTER = "";                  // selected SourceFile filter (both modes)
+var USERFILTER = "";                 // selected Windows-user filter (chrome/visits view)
 var BUSY = false;                    // a SQLECmd run is in progress
 var PRODUCED = [];                   // CSVs produced by the last run (for merge-by-type)
 var MERGE_BUDGET = 26*1024*1024;     // cap for auto-merging same-type CSVs (keeps MSHTML responsive)
@@ -366,6 +369,14 @@ function populateSourceFilter(vals){
   for(var i=0;i<vals.length;i++){ var o=document.createElement("option"); o.value=vals[i]; o.text=shortPath(vals[i]); sel.add(o); }
   SRCFILTER=""; sel.value="";
   $("srcWrap").className = (vals.length>=1) ? "" : "hide";
+}
+function populateUserFilter(vals){
+  var sel=$("userSel"); sel.innerHTML="";
+  var o0=document.createElement("option"); o0.value=""; o0.text="All users ("+vals.length+")"; sel.add(o0);
+  vals=vals.slice(0).sort();
+  for(var i=0;i<vals.length;i++){ var o=document.createElement("option"); o.value=vals[i]; o.text=vals[i]; sel.add(o); }
+  USERFILTER=""; sel.value="";
+  $("userWrap").className = (vals.length>1) ? "" : "hide";   // only useful when >1 user (e.g. the merged all-histories view)
 }
 
 /* ---------- tooling: locate / version / download ---------- */
@@ -993,8 +1004,9 @@ function buildHistoryRecords(raw){
   return recs;
 }
 function finalizeHistory(srcLabel){
-  var srcs=[]; for(var s=0;s<ROWS.length;s++) srcs.push(ROWS[s].src);
+  var srcs=[], usrs=[]; for(var s=0;s<ROWS.length;s++){ srcs.push(ROWS[s].src); usrs.push(ROWS[s].user); }
   populateSourceFilter(distinctVals(srcs));
+  populateUserFilter(distinctVals(usrs));
   $("results").className="";
   $("srcpill").innerHTML=nf(ROWS.length)+" visits &middot; "+esc(srcLabel);
   setStatus("Loaded "+nf(ROWS.length)+" visits","ok");
@@ -1071,7 +1083,7 @@ var COLS=[
   {h:"Typed", sk:function(r){return r.tc;}, cell:function(r){return '<td class="mono" style="text-align:right">'+esc(r.tc)+'</td>';}},
   {h:"Dur(s)", sk:function(r){return r.dur;}, cell:function(r){return '<td class="mono" style="text-align:right">'+esc(r.dur?r.dur.toFixed(1):"")+'</td>';}},
   {h:"Category", sk:function(r){return r.cat;}, cell:function(r){return '<td>'+tags(r)+'</td>';}},
-  {h:"User", t:"The Windows user account whose browser profile this row came from — parsed from the SourceFile path (…\\Users\\<name>\\…). In the merged 'all histories' view rows span multiple users; sort/filter by this to separate them. (Blank if the path has no \\Users\\ segment.)", sk:function(r){return r.user;}, cell:function(r){return '<td class="mono" data-host="'+esc(r.user)+'" title="Click to filter to this user — '+esc(r.user)+'">'+esc(r.user)+'</td>';}},
+  {h:"User", t:"The Windows user account whose browser profile this row came from — parsed from the SourceFile path (…\\Users\\<name>\\…). In the merged 'all histories' view rows span multiple users; use the 'user:' dropdown or click a cell to isolate one. (Blank if the path has no \\Users\\ segment.)", sk:function(r){return r.user;}, cell:function(r){return '<td class="mono lnk" data-user="'+esc(r.user)+'" title="Click to filter to this user — '+esc(r.user)+'">'+esc(r.user)+'</td>';}},
   {h:"SourceFile", sk:function(r){return r.src;}, cell:function(r){return '<td class="mono lnk" data-openfile="'+esc(r.src)+'" title="Click to reveal this source database in Explorer — '+esc(r.src)+'">'+esc(r.src)+'</td>';}}
 ];
 function tdc(v,cls,first){ return '<td class="'+(cls||"")+(first?" first":"")+'">'+esc(v)+'</td>'; }
@@ -1097,6 +1109,7 @@ function filtered(){
     if(CURCAT==="search"&&!r.search) continue;
     if(CURCAT==="typed"&&!r.typed) continue;
     if(SRCFILTER&&r.src!==SRCFILTER) continue;
+    if(USERFILTER&&r.user!==USERFILTER) continue;
     if(HIDDENONLY&&!r.hidden) continue;
     if(DFROM&&(!r.daynum||r.daynum<DFROM)) continue;
     if(DTO&&(!r.daynum||r.daynum>DTO)) continue;
@@ -1405,8 +1418,9 @@ function init(){
   $("dto").onchange=function(){ DTO=dayNum(this.value); render(); };
   $("hiddenOnly").onclick=function(){ HIDDENONLY=this.checked; render(); };
   $("srcSel").onchange=function(){ SRCFILTER=this.value; render(); };
-  $("clearBtn").onclick=function(){ $("q").value="";$("dfrom").value="";$("dto").value="";$("hiddenOnly").checked=false;$("srcSel").value="";
-    QUERY="";DFROM=0;DTO=0;HIDDENONLY=false;SRCFILTER=""; render(); };
+  $("userSel").onchange=function(){ USERFILTER=this.value; render(); };
+  $("clearBtn").onclick=function(){ $("q").value="";$("dfrom").value="";$("dto").value="";$("hiddenOnly").checked=false;$("srcSel").value="";$("userSel").value="";
+    QUERY="";DFROM=0;DTO=0;HIDDENONLY=false;SRCFILTER="";USERFILTER=""; render(); };
   $("exportBtn").onclick=exportView;
   $("copyBtn").onclick=copyNotes;
 
@@ -1416,6 +1430,8 @@ function init(){
     var of=t&&t.getAttribute?t.getAttribute("data-openfile"):null;
     if(of){ try{ new ActiveXObject("WScript.Shell").Run('explorer.exe /select,"'+of+'"',1,false); appendLog("Reveal in Explorer: "+of); }
       catch(eo){ setStatus("Could not open the source location (path may not exist on this machine): "+eo.message,"err"); } return; }
+    var du=t&&t.getAttribute?t.getAttribute("data-user"):null;
+    if(du!=null && du!==""){ USERFILTER=du; try{ $("userSel").value=du; }catch(eu){} render(); return; }
     var host=t&&t.getAttribute?t.getAttribute("data-host"):null;
     if(host){ $("q").value=host; QUERY=host.toLowerCase(); render(); } };
 
