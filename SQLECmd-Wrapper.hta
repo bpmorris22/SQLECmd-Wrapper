@@ -138,7 +138,7 @@
       <span class="muted" id="status" style="margin-left:8px"></span>
     </div>
     <div style="margin-top:8px" id="producedRow" class="hide">
-      <label class="fld">Analyzed databases (each CSV = one source DB) — pick one to view</label>
+      <label class="fld">Other CSVs in this output folder — pick one to view (SQLECmd tables &amp; source DBs; &#9733; = merge multiple sources)</label>
       <select id="producedSel" style="min-width:70%"></select>
       <button class="btn" id="loadSelBtn">Load selected</button>
     </div>
@@ -197,7 +197,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.11.0";
+var APP_VERSION = "1.12.0";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -794,6 +794,14 @@ function loadCsvFile(path){
   try{
     var text=readUtf8(path);
     ingest(text, path);
+    // populate the "other CSVs" picker on Open/Load too (not just after Process), so the analyst can switch
+    // between the sibling tables/source DBs in the same output folder without re-browsing. Guarded on an empty
+    // PRODUCED so a fresh Process run's own list (set just before it calls loadCsvFile) is never overwritten.
+    try{
+      if(!PRODUCED || !PRODUCED.length){ var pool=listCsvFiles(parentDir(path));
+        if(pool && pool.length>1){ PRODUCED=pool; populateProduced(pool); } }
+      try{ $("producedSel").value=path; }catch(eV){}
+    }catch(eS){}
   }catch(e){ setStatus("Could not read CSV: "+e.message,"err"); }
 }
 
