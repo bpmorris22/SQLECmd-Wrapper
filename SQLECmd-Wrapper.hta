@@ -197,7 +197,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.12.0";
+var APP_VERSION = "1.13.0";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -803,6 +803,29 @@ function loadCsvFile(path){
       try{ $("producedSel").value=path; }catch(eV){}
     }catch(eS){}
   }catch(e){ setStatus("Could not read CSV: "+e.message,"err"); }
+}
+function largestBySize(arr){ var b=null; for(var i=0;i<arr.length;i++){ if(!b||arr[i].size>b.size) b=arr[i]; } return b; }
+/* Finder/CLI open of a browsing-history CSV → default to the most complete view: the merged ALL-browser-
+   histories (every source DB / browser) when more than one history source exists in the folder, else the
+   largest Chrome history CSV. Only upgrades when the artifact opened IS browser history; other tables
+   (cookies, downloads, favicons…) load exactly as passed. */
+function openBestHistory(csv){
+  var dir=parentDir(csv), pool=listCsvFiles(dir);
+  if(pool && pool.length){ PRODUCED=pool; populateProduced(pool); }
+  if(isHistoryMapType(mapType(baseName(csv)))){
+    var groups=groupByType(pool||[]), hist=[], t;
+    for(t in groups){ if(groups.hasOwnProperty(t) && isHistoryMapType(t)) hist=hist.concat(groups[t]); }
+    if(hist.length>1){
+      try{ $("producedSel").value="merge:__ALLHIST__"; }catch(e1){}
+      setStatus("Opening ALL browser histories — merging "+hist.length+" sources…","muted");
+      window.setTimeout(function(){ loadMergedHistories(hist, "ALL browser histories — "+hist.length+" sources (Chrome/Edge/Firefox)"); },50);
+      return;
+    }
+    var chrome=[]; for(var i=0;i<pool.length;i++){ if(/ChromiumBrowser_HistoryVisits/i.test(pool[i].name)) chrome.push(pool[i]); }
+    var pick=largestBySize(chrome)||largestBySize(hist);
+    if(pick){ try{ $("producedSel").value=pick.path; }catch(e2){} loadCsvFile(pick.path); return; }
+  }
+  loadCsvFile(csv);
 }
 
 /* ---------- CSV parser (RFC4180) — line-split hybrid: native split for the bulk,
@@ -1451,7 +1474,7 @@ function parseCli(){ var toks=tokenizeCmdTail(), cli={input:"",outDir:"",auto:fa
 function applyCli(cli){ if(!cli.input) return false;
   var fso=new ActiveXObject("Scripting.FileSystemObject");
   applyCaseWindow(cli.from, cli.to);   // case window (UTC): prefill the date filter BEFORE any /auto run — filter only, never scored
-  if(/\.csv$/i.test(cli.input) && fso.FileExists(cli.input)){ appendLog("CLI: loading CSV "+cli.input); window.setTimeout(function(){ loadCsvFile(cli.input); },60); return true; }
+  if(/\.csv$/i.test(cli.input) && fso.FileExists(cli.input)){ appendLog("CLI: loading CSV "+cli.input); window.setTimeout(function(){ openBestHistory(cli.input); },60); return true; }
   if(fso.FolderExists(cli.input)){ $("inMode").value="d"; $("histPath").value=cli.input; $("browseBtn").innerHTML="Browse folder…"; }
   else if(fso.FileExists(cli.input)){ $("inMode").value="f"; $("histPath").value=cli.input; $("browseBtn").innerHTML="Browse…"; }
   else { setStatus("CLI input not found: "+cli.input,"err"); appendLog("CLI input not found: "+cli.input); return false; }
