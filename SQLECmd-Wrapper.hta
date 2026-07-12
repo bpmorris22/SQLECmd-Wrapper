@@ -20,7 +20,7 @@
 <style>
   html{margin:0;height:100%;background:#0d1117}
   body{margin:0;height:100%;background:#0d1117;color:#e6edf3;font-family:Segoe UI,Tahoma,sans-serif;font-size:16px}
-  #content{zoom:0.9;box-sizing:border-box}
+  #content{zoom:0.9;width:111.111%;box-sizing:border-box}   /* zoom<1 shrinks a 100%-wide block below viewport width — widen by 1/zoom in the CSS so it renders full-width from the first paint (matches vSphere; JS applyZoom keeps it in sync for A-/A+) */
   a{color:#58a6ff}
   .mono{font-family:Consolas,"Courier New",monospace}
   .muted{color:#8b949e}
@@ -198,7 +198,7 @@
 <script language="JScript">
 "use strict";
 
-var APP_VERSION = "1.14.0";
+var APP_VERSION = "1.15.0";
 var KNOWN_LATEST_SQLE = "2026.5.0";                                             // baseline as of 2026-06-30
 var SQLE_ZIP_URL = "https://download.ericzimmermanstools.com/net9/SQLECmd.zip"; // official EZ mirror (.NET 9 build)
 var SQLE_PAGE = "https://ericzimmerman.github.io/";                             // for live latest-version lookup
@@ -982,12 +982,12 @@ function buildHistoryRecords(raw){
       vc:numv(cell(rw,iVC)), tc:(iTC>=0?numv(cell(rw,iTC)):(typed?1:0)),
       hidden:(iHid>=0 && isYes(cell(rw,iHid))),
       dur:(iDur>=0?numv(cell(rw,iDur)):0),
-      src:cell(rw,iSrc),
+      src:cell(rw,iSrc), user:userFromSrc(cell(rw,iSrc)),
       cat:category(pu.scheme,pu.host), search:searchTerm(pu.scheme,pu.host,url),
       sus:(sus.length>0), reasons:sus, typed:typed,
       tnum:tn, daynum:(tn?Math.floor(tn/1000000):0)
     };
-    rec.blob=(url+" "+title+" "+pu.host+" "+rec.search+" "+sus.join(" ")).toLowerCase();
+    rec.blob=(url+" "+title+" "+pu.host+" "+rec.search+" "+sus.join(" ")+" "+rec.user).toLowerCase();
     recs.push(rec);
   }
   return recs;
@@ -1013,6 +1013,8 @@ function cell(rw,i){ return (i>=0&&i<rw.length)?rw[i]:""; }
 function numv(v){ var x=parseFloat(v); return isFinite(x)?x:0; }
 function trimStr(s){ return String(s).replace(/^\s+|\s+$/g,""); }
 function baseName(p){ if(!p) return ""; p=String(p); var i=Math.max(p.lastIndexOf("\\"),p.lastIndexOf("/")); return i>=0?p.substring(i+1):p; }
+/* the Windows user account whose browser profile a SourceFile belongs to — the \Users\<name>\ segment of the collected path */
+function userFromSrc(s){ if(!s) return ""; var m=String(s).match(/[\\\/]users[\\\/]([^\\\/]+)/i); return m?m[1]:""; }
 
 /* ---------- aggregates ---------- */
 function computeAgg(rows){
@@ -1069,6 +1071,7 @@ var COLS=[
   {h:"Typed", sk:function(r){return r.tc;}, cell:function(r){return '<td class="mono" style="text-align:right">'+esc(r.tc)+'</td>';}},
   {h:"Dur(s)", sk:function(r){return r.dur;}, cell:function(r){return '<td class="mono" style="text-align:right">'+esc(r.dur?r.dur.toFixed(1):"")+'</td>';}},
   {h:"Category", sk:function(r){return r.cat;}, cell:function(r){return '<td>'+tags(r)+'</td>';}},
+  {h:"User", t:"The Windows user account whose browser profile this row came from — parsed from the SourceFile path (…\\Users\\<name>\\…). In the merged 'all histories' view rows span multiple users; sort/filter by this to separate them. (Blank if the path has no \\Users\\ segment.)", sk:function(r){return r.user;}, cell:function(r){return '<td class="mono" data-host="'+esc(r.user)+'" title="Click to filter to this user — '+esc(r.user)+'">'+esc(r.user)+'</td>';}},
   {h:"SourceFile", sk:function(r){return r.src;}, cell:function(r){return '<td class="mono lnk" data-openfile="'+esc(r.src)+'" title="Click to reveal this source database in Explorer — '+esc(r.src)+'">'+esc(r.src)+'</td>';}}
 ];
 function tdc(v,cls,first){ return '<td class="'+(cls||"")+(first?" first":"")+'">'+esc(v)+'</td>'; }
@@ -1270,12 +1273,12 @@ function exportView(){
   if(MODE==="generic"){ exportGeneric(); return; }
   var rows=window.__viewRows||[];
   if(!rows.length){ setStatus("Nothing to export","err"); return; }
-  var head=["VisitTime_UTC","LastVisited_UTC","Title","URL","Host","Scheme","Category","VisitCount","TypedCount","Typed","DurationSec","Hidden","Search","Suspicious","SuspicionReasons","SourceFile"];
+  var head=["VisitTime_UTC","LastVisited_UTC","Title","URL","Host","Scheme","Category","VisitCount","TypedCount","Typed","DurationSec","Hidden","Search","Suspicious","SuspicionReasons","User","SourceFile"];
   var lines=[head.join(",")];
   for(var i=0;i<rows.length;i++){ var r=rows[i];
     lines.push([cq(r.vtime),cq(r.lvtime),cq(r.title),cq(r.url),cq(r.host),cq(r.scheme),cq(r.cat),
       cq(r.vc),cq(r.tc),cq(r.typed?"Yes":"No"),cq(r.dur),cq(r.hidden?"Yes":"No"),cq(r.search),
-      cq(r.sus?"Yes":"No"),cq(r.reasons.join("; ")),cq(r.src)].join(",")); }
+      cq(r.sus?"Yes":"No"),cq(r.reasons.join("; ")),cq(r.user),cq(r.src)].join(",")); }
   var dir=LASTOUTDIR||$("outDir").value;
   var path=dir+"\\filtered_export_"+nowStamp()+".csv";
   try{ writeUtf8(path, lines.join("\r\n")); setStatus("Exported "+nf(rows.length)+" rows → "+path,"ok");
@@ -1306,7 +1309,7 @@ function copyNotes(){
   var rows=(window.__viewRows||[]).slice(0,500);
   var out=[];
   for(var i=0;i<rows.length;i++){ var r=rows[i];
-    out.push((r.vtime||r.lvtime)+" | "+r.cat+(r.sus?"/SUS":"")+(r.typed?"/typed":"")+" | "+r.host+" | "+r.title+" | "+r.url+(r.reasons.length?(" | "+r.reasons.join("; ")):"")+" | src="+(r.src||"")); }
+    out.push((r.vtime||r.lvtime)+" | "+r.cat+(r.sus?"/SUS":"")+(r.typed?"/typed":"")+" | "+r.host+" | "+r.title+" | "+r.url+(r.reasons.length?(" | "+r.reasons.join("; ")):"")+" | user="+(r.user||"?")+" | src="+(r.src||"")); }
   try{ window.clipboardData.setData("Text", out.join("\r\n"));
     setStatus("Copied "+out.length+" rows to clipboard","ok"); }
   catch(e){ setStatus("Copy failed: "+e.message,"err"); }
